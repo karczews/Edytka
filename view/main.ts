@@ -2,14 +2,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { basicSetup, EditorView } from "codemirror";
 import { Compartment, Text } from "@codemirror/state";
+import { StreamLanguage } from "@codemirror/language";
 import { rust } from "@codemirror/lang-rust";
 import { markdown } from "@codemirror/lang-markdown";
+import { java } from "@codemirror/lang-java";
+import { kotlin, csharp } from "@codemirror/legacy-modes/mode/clike";
 import { oneDark } from "@codemirror/theme-one-dark";
 
-const fileFilters = [
-  { name: "Rust", extensions: ["rs"] },
-  { name: "Markdown", extensions: ["md", "markdown"] },
+const languages = [
+  { name: "Rust", extensions: ["rs"], support: rust },
+  { name: "Markdown", extensions: ["md", "markdown"], support: markdown },
+  { name: "Kotlin", extensions: ["kt", "kts"], support: () => StreamLanguage.define(kotlin) },
+  { name: "Java", extensions: ["java"], support: java },
+  { name: "C#", extensions: ["cs"], support: () => StreamLanguage.define(csharp) },
 ];
+
+const fileFilters = languages.map(({ name, extensions }) => ({ name, extensions }));
 
 let currentPath: string | null = null;
 
@@ -18,8 +26,11 @@ const theme = new Compartment();
 
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 
+// Unknown or missing extensions fall back to Rust, the first entry.
 function languageFor(path: string | null) {
-  return path && /\.(md|markdown)$/i.test(path) ? markdown() : rust();
+  const ext = path?.split(".").pop()?.toLowerCase() ?? "";
+  const lang = languages.find((l) => l.extensions.includes(ext)) ?? languages[0];
+  return lang.support();
 }
 
 function themeFor(dark: boolean) {
