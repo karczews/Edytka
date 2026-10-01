@@ -1,0 +1,47 @@
+name: Build and release
+
+# Every push to main builds the macOS app and publishes it as a new release.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+
+      # Both targets are needed for a universal (Apple Silicon + Intel) build.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: host -> target
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target universal-apple-darwin
+          tagName: build-${{ github.run_number }}
+          releaseName: Edytka build ${{ github.run_number }}
+          releaseCommitish: ${{ github.sha }}
+          releaseBody: |
+            Built from ${{ github.sha }}.
+
+            The app is not signed or notarized. If macOS says it is damaged or
+            can't be opened, run `xattr -cr /Applications/Edytka.app` after
+            installing it.
