@@ -1,0 +1,58 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1f1f1f;
+  --muted: #666666;
+  --border: #cccccc;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #282c34; /* matches the one-dark editor background */
+    --fg: #e6e6e6;
+    --muted: #9aa0a6;
+    --border: #3e4451;
+  }
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+#path {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+#dirty {
+  color: #e8a33d;
+  font-size: 0.9em;
+  margin-right: -4px; /* sit next to the path, tighter than the header gap */
+}
+
+#editor {
+  flex: 1;
+  min-height: 0;
+}
+
+#editor .cm-editor {
+  height: 100%;
+}

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/view/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Edytka</title>
+    <script type="module" src="/view/main.ts" defer></script>
+  </head>
+
+  <body>
+    <header>
+      <button id="open">Open</button>
+      <button id="save">Save</button>
+      <span id="dirty" title="Unsaved changes" hidden>●</span>
+      <span id="path">untitled</span>
+    </header>
+    <div id="editor"></div>
+  </body>
+</html>
