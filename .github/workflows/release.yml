@@ -42,6 +42,6 @@ jobs:
           releaseBody: |
             Built from ${{ github.sha }}.
 
-            The app is not signed or notarized. If macOS says it is damaged or
-            can't be opened, run `xattr -cr /Applications/Edytka.app` after
-            installing it.
+            The app is ad-hoc signed, not notarized. On first launch macOS
+            will block it: open System Settings → Privacy & Security and
+            click "Open Anyway" next to the Edytka message.
