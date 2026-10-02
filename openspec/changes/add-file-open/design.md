@@ -110,6 +110,53 @@ flowchart TD
 
 Read failures (from any open path) and write failures (from any save path) show a native `message` error dialog; the window and its buffer stay intact. This is the first error handling in the app and reuses the installed plugin.
 
+### 7. Pure core extracted for unit-testability
+
+Rust: the queue/claim mechanics (`push`, `claim`, `take`, `pop_for_spawn`) and the URL→path conversion become small pure functions, unit-tested with `#[cfg(test)]` — `cargo test` needs no GUI.
+
+Frontend: the decision logic moves into a new `view/state.ts` with no Tauri or DOM imports: `shouldClaim(path, dirty)` (untitled and not dirty), the bootstrap precedence rule (claim event, then `take_pending_open`, then `__EDYTKA_OPEN_PATH`), `documentTitle(path)` (basename or `untitled`), and the close-decision branching (`dirty ? dialog : destroy`). `main.ts` keeps only the imperative wiring: invokes, dialogs, CodeMirror, event handlers.
+
+- *Alternative considered:* testing through the real Tauri APIs. Rejected: that needs a live webview and is not CI-able; unit tests with mocked APIs are the only automated layer available.
+
+## Verification Plan
+
+```mermaid
+flowchart TB
+  subgraph CI[Automated — CI on every push/PR]
+    direction TB
+    R[cargo test — Rust queue / claim / URL→path]
+    V[vitest + happy-dom — claim, bootstrap, title, close branching]
+    T[tsc + vite build]
+    B[tauri build — Info.plist lists all 8 extensions]
+  end
+  M[Manual — spec scenario pass on installed bundle]
+  CI -. "real Apple Events, Launch Services, native dialogs are not CI-able" .-> M
+```
+
+Three layers: automated unit tests (Rust + Vitest), CI gates (typecheck/build and a bundle assertion), and one manual pass on a real macOS GUI for everything the first two cannot observe. Traceability from the spec scenarios:
+
+| Spec scenario | Automated test | Manual pass |
+| --- | --- | --- |
+| Open With lists Edytka (.md / .txt) | `tauri build` + `plutil` assertion on `CFBundleDocumentTypes` | confirm in Finder |
+| Cold-start single-file open, exactly one window | cargo: queue take/claim; vitest: bootstrap precedence | double-click on installed bundle |
+| Warm open while running | cargo: claim refusal → spawn; vitest: claim reply | open file with app running |
+| Forced open via Open With | same plumbing as cold start | Open With → Edytka |
+| Multiple files at once | cargo: FIFO ordering, one spawn per path | multi-select open |
+| Dirty untitled window preserved | vitest: `shouldClaim(path, dirty=true)` is false | open file with dirty window |
+| Document windows never reused | vitest: `shouldClaim(path, …)` false when a document is loaded | same, with saved file open |
+| Window titles (filename / untitled) | vitest: `documentTitle` | inspect title bars |
+| Failed open reported, app usable | vitest: read-failure branch shows error dialog, buffer intact | open a permission-denied file |
+| Close prompts Save / Don't Save / Cancel | vitest: close branching with dialog mock (each button) | close dirty window, exercise all three |
+| Clean window closes silently | vitest: clean → `destroy()` with no dialog | close unmodified window |
+| Save-dialog cancel keeps window open | vitest: cancelled save dialog → no destroy | cancel the save dialog on close |
+| Failed save keeps window open, informs user | vitest: write-failure branch → no destroy + error dialog | close with a read-only target |
+
+Regression strategy:
+
+- Every spec scenario has at least one automated test where feasible; the table above is the traceability source and is kept current with the specs.
+- CI runs the automated layers on every push/PR, so regressions in claim/queue/plist/decision logic fail the merge rather than shipping.
+- The manual pass is the regression net for what CI cannot reach (real Apple Events, Launch Services caching, native dialogs) and is re-run before every release.
+
 ## Risks / Trade-offs
 
 - [Cold-start race: `Opened` may arrive before the main webview can answer a claim] → the boot-time `take_pending_open` pull covers it; the claim timeout fallback covers a slow or dead webview.
@@ -117,6 +164,8 @@ Read failures (from any open path) and write failures (from any save path) show 
 - [Dialogs can stack if several dirty windows close in quick succession] → each window prompts independently; accepted, matches native macOS document behavior.
 - [Launch Services caching hides association changes during testing] → tasks include rebuilding the bundle and re-registering if needed (`lsregister -f`); verification is against the bundle, never `tauri dev`.
 - [Dropping the version from window titles] → minor; version remains visible in the bundle and the About/Get Info, and can be restored later.
+- [Vitest mocks drift from the real Tauri API surface] → mocks are typed against the installed `@tauri-apps/api`/plugin packages; the manual pass is the backstop for real behavior.
+- [happy-dom approximates the webview] → `state.ts` is DOM-free by construction (pure functions); all DOM wiring stays in `main.ts`, outside unit scope.
 
 ## Migration Plan
 
