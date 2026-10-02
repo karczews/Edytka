@@ -39,7 +39,7 @@ jobs:
       # not an error, so the PR is still there to merge by hand if the setting
       # or token is missing.
       - name: Enable auto-merge on the release pull request
-        if: steps.release-please.outputs.prs_created == 'true'
+        if: steps.release-please.outputs.pr != ''
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           GH_REPO: ${{ github.repository }}
