@@ -82,6 +82,25 @@ jobs:
 
       - run: npm ci
 
+      # release-please already created the release with the changelog; preserve
+      # that body and append the Gatekeeper instructions.
+      - name: Prepare release body
+        id: release-body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag-name }}
+        run: |
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.body // ""')
+          note='The app is ad-hoc signed but not notarized. On first launch macOS will block it: open System Settings -> Privacy & Security and click "Open Anyway" next to the Edytka message.'
+          {
+            echo "body<<EOF"
+            if [ -n "$existing" ]; then echo "$existing"; echo ""; fi
+            echo "## Installing"
+            echo ""
+            echo "$note"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       # The release and its tag already exist (created by release-please in the
       # job above), so tauri-action only uploads to them.
       - uses: tauri-apps/tauri-action@v1
@@ -90,14 +109,5 @@ jobs:
         with:
           args: --target universal-apple-darwin
           tagName: ${{ needs.release.outputs.tag-name }}
-
-      # release-please writes the changelog into the release body; append the
-      # Gatekeeper instructions so downloaders know what to do.
-      - name: Add Gatekeeper note to the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release.outputs.tag-name }}
-        run: |
-          body=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body)
-          printf '%s\n\n## Installing\n\nThe app is ad-hoc signed but not notarized. On first launch macOS will block it: open System Settings -> Privacy & Security and click "Open Anyway" next to the Edytka message.\n' "$body" > release-body.md
-          gh release edit "$TAG" --notes-file release-body.md
+          releaseName: Edytka ${{ needs.release.outputs.tag-name }}
+          releaseBody: ${{ steps.release-body.outputs.body }}
