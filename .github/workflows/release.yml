@@ -42,13 +42,18 @@ jobs:
         if: steps.release-please.outputs.prs_created == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
-          PR_NUMBER: ${{ fromJSON(steps.release-please.outputs.pr).number }}
+          PR_JSON: ${{ steps.release-please.outputs.pr }}
         run: |
-          if ! gh pr merge "$PR_NUMBER" --auto --squash 2>err.txt; then
+          if [ -z "$PR_JSON" ]; then
+            echo "No release PR was created"
+            exit 0
+          fi
+          pr_number=$(echo "$PR_JSON" | jq -r '.number')
+          if ! gh pr merge "$pr_number" --auto --squash 2>err.txt; then
             if grep -qi "auto-merge" err.txt; then
-              echo "auto-merge already enabled or unavailable on PR #$PR_NUMBER"
+              echo "auto-merge already enabled or unavailable on PR #$pr_number"
             else
-              echo "::warning::could not enable auto-merge on PR #$PR_NUMBER; merge it by hand to cut the release"
+              echo "::warning::could not enable auto-merge on PR #$pr_number; merge it by hand to cut the release"
               cat err.txt
             fi
           fi
