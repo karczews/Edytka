@@ -36,7 +36,15 @@ jobs:
         working-directory: host
 
       - name: Build macOS app bundle
-        run: npx tauri build --bundles app
+        run: npx tauri build --bundles app,dmg
+
+      - name: Upload macOS disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Edytka-dmg
+          path: host/target/release/bundle/dmg/*.dmg
+          retention-days: 14
+          if-no-files-found: error
 
       - name: Assert file associations land in Info.plist
         run: |
