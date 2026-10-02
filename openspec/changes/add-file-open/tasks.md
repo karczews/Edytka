@@ -1,0 +1,26 @@
+# Tasks
+
+## 1. File associations
+
+- [ ] 1.1 Add `bundle.fileAssociations` to `host/tauri.conf.json` with five entries (Markdown: `md`, `markdown`; Rust: `rs`; Kotlin: `kt`, `kts`; Java: `java`; C#: `cs`; Text: `txt` with `mimeType: text/plain`), all `role: "Editor"`, and verify `npx tauri build --bundles app` produces a bundle whose `Edytka.app/Contents/Info.plist` contains `CFBundleDocumentTypes` covering all eight extensions
+
+## 2. Rust open-event plumbing
+
+- [ ] 2.1 In `host/src/lib.rs` add the pending-path queue state (mutex) plus the `file_open_claim` and `take_pending_open` commands that pop/drain it, and verify `cargo check` in `host/` passes
+- [ ] 2.2 Match `RunEvent::Opened { urls }` in the `.run()` callback, convert each file URL with `to_file_path()` (skip non-file URLs), push onto the queue, and emit `file-open-claim` to the `main` label; spawn a window on refusal, emit error, or 1s timeout, and verify `cargo check` passes
+- [ ] 2.3 Add a spawn-window helper using `WebviewWindowBuilder` with a unique `window-N` label, the configured window size, the document filename as title, and an `initialization_script` setting `window.__EDYTKA_OPEN_PATH` to the JSON-escaped path, and verify `cargo check` passes
+- [ ] 2.4 Add `core:window:allow-destroy` to `host/capabilities/default.json` and verify `npx tauri build --bundles app` still succeeds (schema validation runs during the build)
+
+## 3. Frontend open-path flow
+
+- [ ] 3.1 In `view/main.ts` extract `openPath(path)` from `openFile()` (read, replace doc, update `savedDoc` and `setPath`) and show a native error dialog when the read fails, keeping the buffer intact; verify `npm run build` passes (tsc + vite)
+- [ ] 3.2 On startup, before anything else: register the `file-open-claim` listener (reply `claimed: true` only when untitled and not dirty, then load the file), call `take_pending_open()` and open a returned path, then check `window.__EDYTKA_OPEN_PATH` and open it; verify `npm run build` passes and `npm run tauri dev` still opens an empty untitled window with no console errors
+- [ ] 3.3 Update `setPath` so each window's title is the filename (basename) or `untitled`, replacing the `Edytka <version>` title, and verify `npm run build` passes
+
+## 4. Window close-protection
+
+- [ ] 4.1 Register `getCurrentWindow().onCloseRequested`: destroy immediately when clean; when dirty, prevent the close and show one native dialog (`message` with `buttons: { yes: "Save", no: "Don't Save", cancel: "Cancel" }`, `kind: "warning"`); Save runs the existing save flow (including the untitled save dialog — a cancelled dialog keeps the window open) then destroys; a failed write keeps the window open and shows an error dialog; Don't Save destroys; Cancel keeps the window; verify `npm run build` passes
+
+## 5. Integration verification (bundled app)
+
+- [ ] 5.1 With `npx tauri build --bundles app` installed (re-register with `lsregister -f` if macOS caches a stale bundle), verify each spec scenario on the real app: "Open With" lists Edytka for `md` and `txt`; cold-start double-click shows the file in exactly one window; warm open while running opens a window; opening a file with a dirty untitled window preserves it and spawns a new window; multiple files at once open one window each; window titles show filename/untitled; close prompts Save/Don't Save/Cancel correctly for dirty windows, is silent for clean ones, and unreadable files show an error while the app stays usable
