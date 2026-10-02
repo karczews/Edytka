@@ -8,6 +8,8 @@ import { markdown } from "@codemirror/lang-markdown";
 import { java } from "@codemirror/lang-java";
 import { kotlin, csharp } from "@codemirror/legacy-modes/mode/clike";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const languages = [
   { name: "Rust", extensions: ["rs"], support: rust },
@@ -105,3 +107,12 @@ window.addEventListener("keydown", (e) => {
     saveFile();
   }
 });
+
+async function setWindowTitle() {
+  const version = await getVersion();
+  await getCurrentWindow().setTitle(`Edytka ${version}`);
+}
+
+// In a plain browser (Vite without Tauri) the API is missing, so the title
+// stays as set in index.html.
+setWindowTitle().catch(() => {});
