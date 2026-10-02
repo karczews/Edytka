@@ -2,6 +2,8 @@
 
 A minimal code and Markdown editor, built with Tauri.
 
+Edytka outperforms TextEdit on large files — see the [performance comparison](docs/performance.md).
+
 ![Edytka](assets/edytka-sample.png)
 
 ## Prerequisites
