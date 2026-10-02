@@ -1,9 +1,25 @@
 name: Release
 
 # Conventional commits on main are collected by release-please into a "Release PR"
-# (version bump + changelog). When that PR is merged, release-please tags vX.Y.Z
-# and creates the GitHub release; the macOS job then runs in the same workflow
-# and attaches the bundles to it.
+# (version bump + changelog); auto-merge below merges it as soon as the required CI
+# check passes (see the branch-protection note further down). Merging pushes to main,
+# which triggers this workflow again: release-please tags vX.Y.Z and creates the
+# GitHub release, and the macOS job attaches the bundles to it.
+#
+# Two things outside this file make the flow unattended:
+# 1. The RELEASE_PLEASE_TOKEN secret (Settings -> Secrets and variables ->
+#    Actions) must hold a PAT with Contents (write), Pull requests (write) and
+#    Workflows (write). With the default GITHUB_TOKEN the release PR is authored
+#    by github-actions[bot], which GitHub treats as an outside collaborator: the
+#    PR's CI runs then require manual approval and fail unapproved. A PAT makes
+#    the PR author its owner, so CI runs unattended, and makes the auto-merge
+#    push to main trigger this workflow (GITHUB_TOKEN pushes do not), so the
+#    release is tagged right away.
+# 2. Branch protection on main must require the CI status check (the `test` job
+#    from ci.yml; see Settings -> Branches). Auto-merge only merges after
+#    required checks pass, so this is what makes the release wait for a green
+#    build instead of merging instantly. If CI fails, the PR stays open; fix and
+#    re-run CI, then merge by hand.
 on:
   push:
     branches: [main]
@@ -21,7 +37,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Cheap job (Ubuntu, seconds): decides whether a release is due.
+  # Cheap job (Ubuntu, seconds): decides whether a release is due, then enables
+  # auto-merge on the release PR so GitHub merges it once CI is green.
   release:
     runs-on: ubuntu-latest
     outputs:
@@ -29,15 +46,25 @@ jobs:
       tag-name: ${{ steps.release-please.outputs.tag_name }}
       version: ${{ steps.release-please.outputs.version }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release-please
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
 
-      # Keeps the flow hands-off: the release PR merges itself as soon as it is
-      # mergeable. Needs "Allow auto-merge" in Settings -> General. A warning,
-      # not an error, so the PR is still there to merge by hand if the setting
-      # or token is missing.
+      # `if:` conditions can't read secrets, so this checks via the shell.
+      - name: Warn if RELEASE_PLEASE_TOKEN is not set
+        env:
+          TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::RELEASE_PLEASE_TOKEN secret is not set. Release PRs will be authored by github-actions[bot], so their CI runs will need manual approval and will fail unapproved. Add a PAT with Contents (write), Pull requests (write) and Workflows (write) scopes."
+          fi
+
+      # Keeps the flow hands-off: the release PR merges itself as soon as the
+      # required `test` check is green. Needs "Allow auto-merge" in Settings ->
+      # General and the branch-protection rule described above. A warning, not
+      # an error, so the PR is still there to merge by hand if a setting or the
+      # token is missing.
       - name: Enable auto-merge on the release pull request
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
