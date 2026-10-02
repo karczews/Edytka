@@ -2,6 +2,8 @@
 
 A minimal code and Markdown editor, built with Tauri.
 
+![Edytka](assets/edytka-sample.png)
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) and npm
