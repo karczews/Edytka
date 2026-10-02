@@ -2,6 +2,17 @@
 
 ## Context
 
+```mermaid
+flowchart LR
+  subgraph Webview
+    CM[CodeMirror editor + UI]
+  end
+  subgraph Rust host
+    RO[read_file] & WR[write_file]
+  end
+  CM -->|invoke| RO & WR
+```
+
 Edytka is a single-window Tauri 2 app on macOS. `view/main.ts` holds the whole frontend: a CodeMirror editor, open/save buttons, a dirty indicator driven by comparing the current document against the last-saved `Text`, and language/theme compartments. `host/src/lib.rs` exposes exactly two commands, `read_file` and `write_file`. The window is declared statically in `tauri.conf.json` (`app.windows[0]`), the capability set is `core:default` + `opener:default` + `dialog:default` + `core:window:allow-set-title`, and the dialog plugin is already installed. There is no error handling anywhere: both commands surface failures as rejected promises that the frontend currently ignores.
 
 Verified against the installed crates (tauri 2.12.1, tauri-runtime-wry 2.12.1) and the Tauri v2 config schema:
@@ -41,6 +52,26 @@ The `.run()` callback matches `RunEvent::Opened { urls }`, converts each `Url` w
 
 ### 3. Claim protocol + pending queue (race-proof window assignment)
 
+```mermaid
+sequenceDiagram
+  participant OS as macOS
+  participant R as Rust
+  participant M as main window
+  participant W as new window
+
+  OS->>R: Opened { file:///a.md }
+  R->>R: push path onto queue
+  R->>M: emit file-open-claim
+  alt pristine (untitled and not dirty)
+    M->>R: file_open_claim(claimed: true)
+    M->>M: openPath(a.md)
+  else dirty, showing a document, or closed
+    R->>W: spawn with __EDYTKA_OPEN_PATH
+    W->>W: openPath(a.md)
+  end
+  Note over R,M: Cold start: Opened can arrive before listeners attach,<br/>so M pulls take_pending_open() at boot as a fallback.
+```
+
 The static `main` window from `tauri.conf.json` stays: it is the only window that can be untitled (there is no New command yet). Assignment:
 
 - On `Opened`, Rust emits `file-open-claim` to the `main` label. The main window's frontend replies via `invoke("file_open_claim", { claimed })` — `claimed: true` only if it is untitled **and** not dirty — and opens the file when it claims it. Rust treats emit failure, timeout (1s), or `claimed: false` as refusal and spawns a new window for that path.
@@ -55,6 +86,20 @@ The static `main` window from `tauri.conf.json` stays: it is the only window tha
 `openFile()` is refactored into `openPath(path)` (invoke `read_file`, replace doc, update `savedDoc`, `setPath`) plus the dialog wrapper. The bootstrap order becomes: attach claim listener and `take_pending_open` first, then check `__EDYTKA_OPEN_PATH`. `setPath` gains title handling: each window's title becomes the filename or `untitled` (replacing the current `Edytka <version>` title, which only makes sense for one window).
 
 ### 5. Close-protection entirely in the frontend
+
+```mermaid
+flowchart TD
+  C[Close requested] --> D{unsaved changes?}
+  D -->|no| X[destroy window]
+  D -->|yes| P[prevent close + Save / Don't Save / Cancel dialog]
+  P --> S{choice}
+  S -->|Save| SV[saveFile]
+  SV --> OK{saved?}
+  OK -->|yes| X
+  OK -->|cancel or failed| K[window stays open]
+  S -->|Don't Save| X
+  S -->|Cancel| K
+```
 
 `getCurrentWindow().onCloseRequested` calls `event.preventDefault()` when the document is dirty, then shows one native dialog (`message` with `buttons: { yes: "Save", no: "Don't Save", cancel: "Cancel" }`, `kind: "warning"`). Save runs the existing `saveFile` flow (which already handles untitled via the save dialog) and then `destroy()`; a cancelled save dialog aborts the close. Don't Save destroys. Cancel does nothing. Clean windows destroy immediately.
 

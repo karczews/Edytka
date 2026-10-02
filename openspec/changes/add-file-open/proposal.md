@@ -6,6 +6,17 @@ Edytka cannot be opened by double-clicking a file: macOS never lists it as an ap
 
 ## What Changes
 
+```mermaid
+flowchart LR
+  OS["macOS: double-click / Open With"] --> EVT[RunEvent::Opened]
+  EVT --> Q[(pending queue)]
+  Q --> CLAIM{pristine untitled window?}
+  CLAIM -->|yes| REUSE[load into that window]
+  CLAIM -->|no| SPAWN[spawn a new window with the file]
+  SPAWN --> DONE[file shown]
+  REUSE --> DONE
+```
+
 - Declare macOS file associations for `md`, `markdown`, `rs`, `kt`, `kts`, `java`, `cs`, and `txt` (role Editor) in `bundle.fileAssociations`.
 - Handle the macOS open-file event (`RunEvent::Opened`) in Rust: convert file URLs to paths and deliver them to the frontend.
 - Open each incoming file in a window. The first file is offered to the pristine untitled startup window (claim protocol); when that window is dirty, closed, or already showing a document — or for additional files — a new window is spawned that loads the file.
