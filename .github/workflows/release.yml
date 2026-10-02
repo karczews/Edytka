@@ -1,6 +1,9 @@
-name: Build and release
+name: Release
 
-# Every push to main builds the macOS app and publishes it as a new release.
+# Conventional commits on main are collected by release-please into a "Release PR"
+# (version bump + changelog). When that PR is merged, release-please tags vX.Y.Z
+# and creates the GitHub release; the macOS job then runs in the same workflow
+# and attaches the bundles to it.
 on:
   push:
     branches: [main]
@@ -8,9 +11,53 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
+
+# One release at a time: a newer push waits in the queue instead of racing the
+# run that is already building.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
+  # Cheap job (Ubuntu, seconds): decides whether a release is due.
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      release-created: ${{ steps.release-please.outputs.release_created }}
+      tag-name: ${{ steps.release-please.outputs.tag_name }}
+      version: ${{ steps.release-please.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release-please
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+
+      # Keeps the flow hands-off: the release PR merges itself as soon as it is
+      # mergeable. Needs "Allow auto-merge" in Settings -> General. A warning,
+      # not an error, so the PR is still there to merge by hand if the setting
+      # or token is missing.
+      - name: Enable auto-merge on the release pull request
+        if: steps.release-please.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          PR_NUMBER: ${{ fromJSON(steps.release-please.outputs.pr).number }}
+        run: |
+          if ! gh pr merge "$PR_NUMBER" --auto --squash 2>err.txt; then
+            if grep -qi "auto-merge" err.txt; then
+              echo "auto-merge already enabled or unavailable on PR #$PR_NUMBER"
+            else
+              echo "::warning::could not enable auto-merge on PR #$PR_NUMBER; merge it by hand to cut the release"
+              cat err.txt
+            fi
+          fi
+
+  # Only runs when a version was actually released: a universal macOS build
+  # costs ~10 minutes of runner time.
   release-macos:
+    needs: release
+    if: needs.release.outputs.release-created == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -31,17 +78,22 @@ jobs:
 
       - run: npm ci
 
+      # The release and its tag already exist (created by release-please in the
+      # job above), so tauri-action only uploads to them.
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target universal-apple-darwin
-          tagName: build-${{ github.run_number }}
-          releaseName: Edytka build ${{ github.run_number }}
-          releaseCommitish: ${{ github.sha }}
-          releaseBody: |
-            Built from ${{ github.sha }}.
+          tagName: ${{ needs.release.outputs.tag-name }}
 
-            The app is ad-hoc signed, not notarized. On first launch macOS
-            will block it: open System Settings → Privacy & Security and
-            click "Open Anyway" next to the Edytka message.
+      # release-please writes the changelog into the release body; append the
+      # Gatekeeper instructions so downloaders know what to do.
+      - name: Add Gatekeeper note to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release.outputs.tag-name }}
+        run: |
+          body=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body)
+          printf '%s\n\n## Installing\n\nThe app is ad-hoc signed but not notarized. On first launch macOS will block it: open System Settings -> Privacy & Security and click "Open Anyway" next to the Edytka message.\n' "$body" > release-body.md
+          gh release edit "$TAG" --notes-file release-body.md
