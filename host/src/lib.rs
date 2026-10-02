@@ -6,9 +6,21 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
 
+/// A file's text together with its on-disk byte size, so the frontend can
+/// decide large-file mode before parsing the contents.
+#[derive(serde::Serialize)]
+struct FileContents {
+    text: String,
+    size: u64,
+}
+
 #[tauri::command]
-fn read_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))
+fn read_file(path: String) -> Result<FileContents, String> {
+    let size = std::fs::metadata(&path)
+        .map(|m| m.len())
+        .map_err(|e| format!("{path}: {e}"))?;
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    Ok(FileContents { text, size })
 }
 
 #[tauri::command]
@@ -298,5 +310,24 @@ mod tests {
     fn to_path_rejects_non_file_urls() {
         let url = Url::parse("https://example.com/notes.md").unwrap();
         assert_eq!(to_path(&url), None);
+    }
+
+    #[test]
+    fn read_file_returns_text_and_byte_size() {
+        // Multibyte content proves `size` is bytes, not characters.
+        let contents = "żółć 汉";
+        let path = std::env::temp_dir().join(format!(
+            "edytka-test-{}-{:?}.md",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, contents).unwrap();
+        let result = read_file(path.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(result.text, contents);
+        assert_eq!(result.size, contents.len() as u64);
+        std::fs::remove_file(&path).unwrap();
     }
 }

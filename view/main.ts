@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { message, open, save } from "@tauri-apps/plugin-dialog";
 import { basicSetup, EditorView } from "codemirror";
-import { Compartment, Text } from "@codemirror/state";
+import { Compartment, Extension, Text } from "@codemirror/state";
 import { StreamLanguage } from "@codemirror/language";
 import { rust } from "@codemirror/lang-rust";
 import { markdown } from "@codemirror/lang-markdown";
@@ -16,6 +16,7 @@ import {
   bootstrapPath,
   closeDecision,
   documentTitle,
+  isLargeFile,
   mapCloseChoice,
   shouldClaim,
 } from "./state";
@@ -34,6 +35,9 @@ let currentPath: string | null = null;
 // Set synchronously before replying to a claim and held until the claimed
 // path finishes opening, so a second claim in flight is refused.
 let claimInFlight = false;
+// Decided once per open from the file's byte size; large files edit in
+// plain-text mode (no parser) and must keep that mode across saves.
+let largeMode = false;
 
 const language = new Compartment();
 const theme = new Compartment();
@@ -41,7 +45,10 @@ const theme = new Compartment();
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 
 // Unknown or missing extensions fall back to Rust, the first entry.
-function languageFor(path: string | null) {
+// Large files get no language at all: the empty extension leaves the
+// document unparsed, which keeps scrolling and typing responsive.
+function languageFor(path: string | null, large: boolean): Extension {
+  if (large) return [];
   const ext = path?.split(".").pop()?.toLowerCase() ?? "";
   const lang = languages.find((l) => l.extensions.includes(ext)) ?? languages[0];
   return lang.support();
@@ -52,6 +59,13 @@ function themeFor(dark: boolean) {
 }
 
 const dirtyEl = document.querySelector<HTMLElement>("#dirty")!;
+const largeEl = document.querySelector<HTMLElement>("#large")!;
+
+// Reflect the large-file mode set by openPath. Hidden by default; shown
+// only while the open document is in plain-text mode.
+function updateLargeIndicator() {
+  largeEl.hidden = !largeMode;
+}
 
 // The document as last opened or saved. Comparing against it (instead of a
 // flag) means typing a change and undoing it clears the indicator again.
@@ -70,7 +84,7 @@ const view = new EditorView({
   doc: "",
   extensions: [
     basicSetup,
-    language.of(languageFor(null)),
+    language.of(languageFor(null, false)),
     theme.of(themeFor(prefersDark.matches)),
     EditorView.updateListener.of((u) => {
       if (u.docChanged) updateDirty();
@@ -88,7 +102,10 @@ function setPath(path: string | null) {
   currentPath = path;
   document.querySelector("#path")!.textContent = path ?? "untitled";
   getCurrentWindow().setTitle(documentTitle(path)).catch(() => {});
-  view.dispatch({ effects: language.reconfigure(languageFor(path)) });
+  // The language must reflect the current open's mode: a save or title
+  // update on a large file must not silently restore highlighting.
+  view.dispatch({ effects: language.reconfigure(languageFor(path, largeMode)) });
+  updateLargeIndicator();
 }
 
 async function showError(heading: string, detail: string) {
@@ -107,12 +124,19 @@ function queueOpen(path: string): Promise<void> {
 // On a read failure the buffer stays intact and an error dialog is shown.
 async function openPath(path: string) {
   let text: string;
+  let size: number;
   try {
-    text = await invoke<string>("read_file", { path });
+    ({ text, size } = await invoke<{ text: string; size: number }>(
+      "read_file",
+      { path },
+    ));
   } catch (error) {
     await showError(`Could not open ${path}`, String(error));
     return;
   }
+  // Decide the mode before setPath runs, so the language and indicator
+  // are configured with the mode this open produced.
+  largeMode = isLargeFile(size);
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },
   });
