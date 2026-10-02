@@ -25,6 +25,40 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown Document",
+        "role": "Editor",
+        "mimeType": "text/markdown"
+      },
+      {
+        "ext": ["rs"],
+        "name": "Rust Source",
+        "role": "Editor"
+      },
+      {
+        "ext": ["kt", "kts"],
+        "name": "Kotlin Source",
+        "role": "Editor"
+      },
+      {
+        "ext": ["java"],
+        "name": "Java Source",
+        "role": "Editor"
+      },
+      {
+        "ext": ["cs"],
+        "name": "C# Source",
+        "role": "Editor"
+      },
+      {
+        "ext": ["txt"],
+        "name": "Text Document",
+        "role": "Editor",
+        "mimeType": "text/plain"
+      }
+    ],
     "macOS": {
       "signingIdentity": "-"
     },

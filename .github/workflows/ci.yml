@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Frontend unit tests
+        run: npm test
+
+      - name: Type-check and build frontend
+        run: npm run build
+
+      - name: Rust unit tests
+        run: cargo test
+        working-directory: host
+
+      - name: Build macOS app bundle
+        run: npx tauri build --bundles app
+
+      - name: Assert file associations land in Info.plist
+        run: |
+          PLIST="host/target/release/bundle/macos/Edytka.app/Contents/Info.plist"
+          for ext in md markdown rs kt kts java cs txt; do
+            plutil -extract CFBundleDocumentTypes xml1 -o - "$PLIST" | grep -q "<string>$ext</string>" || {
+              echo "missing extension: $ext"; exit 1;
+            }
+          done
+          echo "all file associations present"
