@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/karczews/Edytka/compare/v0.3.2...v0.3.3) (2026-10-02)
+
+
+### Performance Improvements
+
+* optimize binary size and speed ([#5](https://github.com/karczews/Edytka/issues/5)) ([2788bf8](https://github.com/karczews/Edytka/commit/2788bf8b9b8453b0768b39f9649261fee018ad63))
+
 ## [0.3.2](https://github.com/karczews/Edytka/compare/v0.3.1...v0.3.2) (2026-10-02)
 
 
