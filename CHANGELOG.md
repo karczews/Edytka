@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/karczews/Edytka/compare/v0.3.0...v0.3.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* map close-prompt result by button label so Save and Don't Save work ([0fc64d3](https://github.com/karczews/Edytka/commit/0fc64d3f3bc4181e59ba7d4b6f2ae37626be4777))
+
 ## [0.3.0](https://github.com/karczews/Edytka/compare/v0.2.0...v0.3.0) (2026-10-02)
 
 
