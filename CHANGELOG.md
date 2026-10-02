@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/karczews/Edytka/compare/v0.3.3...v0.4.0) (2026-10-02)
+
+
+### Features
+
+* open files over 20 MiB in plain-text fallback mode ([#9](https://github.com/karczews/Edytka/issues/9)) ([42ce9d3](https://github.com/karczews/Edytka/commit/42ce9d39330759fb9cc49c73e303975baad98f38))
+
 ## [0.3.3](https://github.com/karczews/Edytka/compare/v0.3.2...v0.3.3) (2026-10-02)
 
 
