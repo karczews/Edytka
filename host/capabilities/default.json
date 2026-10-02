@@ -4,10 +4,12 @@
   "description": "Capability for the main window and windows spawned for opened files",
   "windows": ["main", "window-*"],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-set-title",
     "core:window:allow-destroy",
-    "opener:default",
-    "dialog:default"
+    "dialog:allow-message",
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }
