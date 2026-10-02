@@ -312,6 +312,16 @@ mod tests {
         assert_eq!(to_path(&url), None);
     }
 
+    /// Removes its file on drop, so a panicking assertion cannot leave
+    /// test files behind in the temp directory.
+    struct TempFile(std::path::PathBuf);
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
     #[test]
     fn read_file_returns_text_and_byte_size() {
         // Multibyte content proves `size` is bytes, not characters.
@@ -325,9 +335,9 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::write(&path, contents).unwrap();
+        let _temp = TempFile(path.clone());
         let result = read_file(path.to_string_lossy().into_owned()).unwrap();
         assert_eq!(result.text, contents);
         assert_eq!(result.size, contents.len() as u64);
-        std::fs::remove_file(&path).unwrap();
     }
 }
