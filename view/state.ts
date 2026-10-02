@@ -35,6 +35,21 @@ export function bootstrapPath(
 
 export type CloseDecision = "destroy" | "prompt";
 
+/**
+ * Files strictly larger than this many bytes open in large-file mode:
+ * no syntax parsing, no highlighting, so editing stays responsive.
+ */
+export const LARGE_FILE_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Should a file of this on-disk byte size open in large-file mode?
+ * Strictly greater than the threshold: a file of exactly the threshold
+ * size still gets normal highlighting.
+ */
+export function isLargeFile(size: number): boolean {
+  return size > LARGE_FILE_BYTES;
+}
+
 /** Closing a clean window destroys it directly; a dirty one prompts first. */
 export function closeDecision(dirty: boolean): CloseDecision {
   return dirty ? "prompt" : "destroy";

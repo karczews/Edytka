@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   CLOSE_BUTTONS,
+  LARGE_FILE_BYTES,
   bootstrapPath,
   closeDecision,
   documentTitle,
+  isLargeFile,
   mapCloseChoice,
   shouldClaim,
 } from "./state";
@@ -86,5 +88,22 @@ describe("mapCloseChoice", () => {
     expect(mapCloseChoice(undefined)).toBe("cancel");
     expect(mapCloseChoice("")).toBe("cancel");
     expect(mapCloseChoice("Something else")).toBe("cancel");
+  });
+});
+
+describe("isLargeFile", () => {
+  it("defines the threshold as 20 MiB", () => {
+    expect(LARGE_FILE_BYTES).toBe(20 * 1024 * 1024);
+  });
+
+  it("triggers strictly above the threshold", () => {
+    expect(isLargeFile(LARGE_FILE_BYTES + 1)).toBe(true);
+    expect(isLargeFile(LARGE_FILE_BYTES * 2)).toBe(true);
+  });
+
+  it("does not trigger at or below the threshold", () => {
+    expect(isLargeFile(LARGE_FILE_BYTES)).toBe(false);
+    expect(isLargeFile(LARGE_FILE_BYTES - 1)).toBe(false);
+    expect(isLargeFile(0)).toBe(false);
   });
 });
