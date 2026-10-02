@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/karczews/Edytka/compare/v0.2.0...v0.3.0) (2026-10-02)
+
+
+### Features
+
+* open files from macOS with per-file windows and close protection ([b9147dc](https://github.com/karczews/Edytka/commit/b9147dc88610cf966194f0fc3ce082392b65f91b))
+
 ## [0.2.0](https://github.com/karczews/Edytka/compare/v0.1.0...v0.2.0) (2026-10-02)
 
 
