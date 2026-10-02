@@ -28,7 +28,7 @@
 
 ## 5. CI workflow
 
-- [ ] 5.1 Add `.github/workflows/ci.yml` running on `macos-latest` for every push/PR: `cargo test` in `host/`, `npm ci` + `npm test` + `npm run build`, and `npx tauri build --bundles app` with a `plutil` assertion that `CFBundleDocumentTypes` in the built `Info.plist` covers all eight extensions; verify the workflow runs green on this branch's PR
+- [x] 5.1 Add `.github/workflows/ci.yml` running on `macos-latest` for every push/PR: `cargo test` in `host/`, `npm ci` + `npm test` + `npm run build`, and `npx tauri build --bundles app` with a `plutil` assertion that `CFBundleDocumentTypes` in the built `Info.plist` covers all eight extensions; verify the workflow runs green on this branch's PR
 
 ## 6. Integration verification (bundled app)
 
