@@ -19,7 +19,7 @@ Verified against the installed crates (tauri 2.12.1, tauri-runtime-wry 2.12.1) a
 
 - `bundle.fileAssociations` is the config key that generates `CFBundleDocumentTypes` in macOS `Info.plist` (fields: `ext`, `role`, `mimeType`, `rank`).
 - `RunEvent::Opened { urls }` exists and is compiled in only on macOS/iOS/Android. On macOS it fires for open-file requests whether the app was running or not; the file path does **not** arrive in argv (that's Apple-Event territory), so parsing `std::env::args()` is unreliable here.
-- `ExitRequested` fires with `code: Some` on Cmd+Q and with `code: None` when the last window is destroyed; quitting drops windows directly without per-window `CloseRequested` events.
+- Cmd+Q does not go through `ExitRequested` at all: it surfaces as `RunEvent::Exit` via tao's `LoopDestroyed` and is not preventable at the Tauri layer. `ExitRequested { code: Some }` fires only for programmatic `AppHandle::exit(code)`; `ExitRequested { code: None }` fires when the last window is destroyed. Either way, quitting drops windows directly without per-window `CloseRequested` events.
 - A window's `CloseRequested` can be prevented from JS (`onCloseRequested` + `preventDefault`), and `destroy()` bypasses the close-request path, so a confirmed close cannot loop.
 - `core:window:default` does **not** include `allow-destroy`; the JS call to `destroy()` needs `core:window:allow-destroy` added to the capability.
 
@@ -50,6 +50,8 @@ One association entry per family with a meaningful `CFBundleTypeName`: Markdown 
 
 The `.run()` callback matches `RunEvent::Opened { urls }`, converts each `Url` with `to_file_path()` (skipping non-`file:` URLs), and pushes the paths onto a Rust-side pending queue behind a mutex. The frontend never parses process arguments.
 
+- *Alternative considered:* parsing `std::env::args()`. Rejected: on macOS the file arrives via Apple Event, not argv, so the args are empty or unrelated.
+
 ### 3. Claim protocol + pending queue (race-proof window assignment)
 
 ```mermaid
@@ -61,29 +63,39 @@ sequenceDiagram
 
   OS->>R: Opened { file:///a.md }
   R->>R: push path onto queue
-  R->>M: emit file-open-claim
-  alt pristine (untitled and not dirty)
-    M->>R: file_open_claim(claimed: true)
+  alt warm open (main window exists)
+    R->>M: emit file-open-claim
+    alt pristine (untitled and not dirty)
+      M->>R: file_open_claim(claimed: true)
+      M->>M: openPath(a.md)
+    else dirty, showing a document, or dead
+      R->>W: spawn with __EDYTKA_OPEN_PATH
+      W->>W: openPath(a.md)
+    end
+  else cold start (main not created yet)
+    Note over R,M: no emit, no timeout
+    M->>R: take_pending_open() at boot
+    R-->>M: a.md (popped)
     M->>M: openPath(a.md)
-  else dirty, showing a document, or closed
-    R->>W: spawn with __EDYTKA_OPEN_PATH
-    W->>W: openPath(a.md)
   end
-  Note over R,M: Cold start: Opened can arrive before listeners attach,<br/>so M pulls take_pending_open() at boot as a fallback.
 ```
 
 The static `main` window from `tauri.conf.json` stays: it is the only window that can be untitled (there is no New command yet). Assignment:
 
-- On `Opened`, Rust emits `file-open-claim` to the `main` label. The main window's frontend replies via `invoke("file_open_claim", { claimed })` — `claimed: true` only if it is untitled **and** not dirty — and opens the file when it claims it. Rust treats emit failure, timeout (1s), or `claimed: false` as refusal and spawns a new window for that path.
+- Cold start (`Opened` arrives during launch, before `Ready`, so the `main` window does not exist yet): Rust only pushes the paths onto the queue — no claim emit and no timeout. The boot-time pull is the sole cold-start path; this closes the race where a claim timeout would spawn `window-1` before the main webview can answer, leaving an untitled `main` plus a spawned window.
+- Warm open (the `main` window exists): Rust emits `file-open-claim` to the `main` label. The main window's frontend replies via `invoke("file_open_claim", { claimed })` — `claimed: true` only if it is untitled **and** not dirty — and opens the file when it claims it. Rust treats timeout (1s), a dead window, or `claimed: false` as refusal and spawns a new window for that path.
 - Every other path in the request — and every subsequent request while `main` is no longer pristine — spawns one window per path.
-- Belt-and-braces for the cold-start race (the `Opened` event can arrive before the webview's listeners are attached): at boot the main window calls `take_pending_open()`, which pops the next unclaimed path. Claiming, spawning, and taking all drain the same queue, so a path is never opened twice and never lost.
+- At boot the main window calls `take_pending_open()`, which pops the next unclaimed path. Claiming, spawning, and taking all drain the same queue, so a path is never opened twice and never lost. To guard against two `Opened` requests landing in the same tick both being claimed while the first `openPath` is still in flight, the frontend sets an in-flight claim flag synchronously before replying `claimed`.
 - Spawned windows: `WebviewWindowBuilder` with unique labels (`window-1`, ...), same size as the configured window, and an `initialization_script` that sets `window.__EDYTKA_OPEN_PATH` to the JSON-escaped path. The frontend checks that variable on startup and loads the path directly — no event timing involved.
+- Capability coverage: plugin commands are ACL-checked per calling window label, so the capability's `windows` list must cover spawned labels too (`["main", "window-*"]`) — otherwise every spawned window loses `destroy`, dialogs, and `set-title`, which would break close-protection outside `main`.
 
 *Alternative considered:* always spawn a new window and never reuse. Rejected: cold-start double-click would produce two windows (empty + file).
 
 ### 4. Frontend: `openPath` as the single load entry point
 
 `openFile()` is refactored into `openPath(path)` (invoke `read_file`, replace doc, update `savedDoc`, `setPath`) plus the dialog wrapper. The bootstrap order becomes: attach claim listener and `take_pending_open` first, then check `__EDYTKA_OPEN_PATH`. `setPath` gains title handling: each window's title becomes the filename or `untitled` (replacing the current `Edytka <version>` title, which only makes sense for one window).
+
+- *Alternative considered:* delivering spawned-window paths as a Tauri event instead of the init-script variable. Rejected: the script runs before any listener can attach, so the variable is the only race-free delivery for spawned windows; the claim event remains for the already-running `main` window.
 
 ### 5. Close-protection entirely in the frontend
 
@@ -104,11 +116,13 @@ flowchart TD
 `getCurrentWindow().onCloseRequested` calls `event.preventDefault()` when the document is dirty, then shows one native dialog (`message` with `buttons: { yes: "Save", no: "Don't Save", cancel: "Cancel" }`, `kind: "warning"`). Save runs the existing `saveFile` flow (which already handles untitled via the save dialog) and then `destroy()`; a cancelled save dialog aborts the close. Don't Save destroys. Cancel does nothing. Clean windows destroy immediately.
 
 - *Alternative considered:* intercepting `CloseRequested` in Rust and round-tripping to the frontend. Rejected: dirty state lives in the frontend; the JS hook keeps the whole flow in one place.
-- Because Cmd+Q never fires per-window `CloseRequested` (verified in the runtime source), this layer and any future app-quit protection cannot conflict.
+- Because Cmd+Q delivers no per-window `CloseRequested` and cannot be intercepted at the Tauri layer at all (it surfaces only as `RunEvent::Exit`, see Context), this frontend layer and any future app-quit protection cannot conflict.
 
 ### 6. Error reporting via the dialog plugin
 
 Read failures (from any open path) and write failures (from any save path) show a native `message` error dialog; the window and its buffer stay intact. This is the first error handling in the app and reuses the installed plugin.
+
+- *Alternative considered:* in-page banners/toasts. Rejected: more UI surface in an editor chrome that intentionally stays minimal; the native dialog is already installed and consistent with the close prompt.
 
 ### 7. Pure core extracted for unit-testability
 
@@ -149,6 +163,7 @@ Three layers: automated unit tests (Rust + Vitest), CI gates (typecheck/build an
 | Close prompts Save / Don't Save / Cancel | vitest: close branching with dialog mock (each button) | close dirty window, exercise all three |
 | Clean window closes silently | vitest: clean → `destroy()` with no dialog | close unmodified window |
 | Save-dialog cancel keeps window open | vitest: cancelled save dialog → no destroy | cancel the save dialog on close |
+| Save-dialog completed closes window | vitest: completed save dialog → save → destroy | complete the save dialog on close |
 | Failed save keeps window open, informs user | vitest: write-failure branch → no destroy + error dialog | close with a read-only target |
 
 Regression strategy:
@@ -159,7 +174,7 @@ Regression strategy:
 
 ## Risks / Trade-offs
 
-- [Cold-start race: `Opened` may arrive before the main webview can answer a claim] → the boot-time `take_pending_open` pull covers it; the claim timeout fallback covers a slow or dead webview.
+- [Cold-start race: `Opened` arrives before `Ready`, when `main` does not exist yet] → pre-Ready opens never emit or time out; the boot-time `take_pending_open` pull is the sole cold-start path. The claim timeout runs only on warm opens and covers a dead webview.
 - [20-file open produces 20 windows] → accepted for v1 (TextEdit-style); a cap is a later, additive policy.
 - [Dialogs can stack if several dirty windows close in quick succession] → each window prompts independently; accepted, matches native macOS document behavior.
 - [Launch Services caching hides association changes during testing] → tasks include rebuilding the bundle and re-registering if needed (`lsregister -f`); verification is against the bundle, never `tauri dev`.

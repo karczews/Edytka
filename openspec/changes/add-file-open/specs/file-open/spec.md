@@ -8,7 +8,7 @@ Lets the operating system hand files to Edytka and ensures each file opens in a 
 
 ### Requirement: System recognizes Edytka for its document types
 
-After installation, the operating system SHALL list Edytka as an application that can open files with the extensions `md`, `markdown`, `rs`, `kt`, `kts`, `java`, `cs`, and `txt`, in an editor role.
+After installation, the operating system SHALL list Edytka as an application that can open files with the extensions `md`, `markdown`, `rs`, `kt`, `kts`, `java`, `cs`, and `txt`, as an editor.
 
 #### Scenario: Open With lists Edytka
 - **WHEN** a user opens the "Open With" menu for a `.md` file on macOS

@@ -23,7 +23,7 @@ flowchart LR
 - Refactor the frontend open flow so a path can be loaded directly (not only via the Open dialog); bootstrap spawned windows from an initialization script.
 - Show the document's filename (or "untitled") in each window's title bar.
 - Close-protection: closing a window with unsaved changes prompts Save / Don't Save / Cancel instead of silently discarding the buffer.
-- Add `core:window:allow-destroy` to the window capability so the frontend can destroy a window after a confirmed close.
+- Extend the window capability: add `core:window:allow-destroy` and cover spawned windows (`windows: ["main", "window-*"]`) so every window can destroy itself and keeps dialogs and titles.
 - Verification: automated unit tests for the queue/claim logic (`cargo test`) and the frontend decision logic (Vitest, with the decision code extracted into a pure module), a CI workflow that also asserts the built bundle declares the file associations, and a manual macOS scenario pass for everything CI cannot reach.
 
 No breaking changes. macOS only (Windows/Linux file-open paths are out of scope).
@@ -43,9 +43,9 @@ None — the project has no existing specs.
 
 - `host/tauri.conf.json` — new `bundle.fileAssociations` block.
 - `host/src/lib.rs` — `RunEvent::Opened` handling, window spawning (`WebviewWindowBuilder` + `initialization_script`), claim protocol, quit/close bookkeeping as needed; queue/claim/URL-conversion logic extracted into pure functions with `#[cfg(test)]` unit tests.
-- `view/main.ts` — `openPath` refactor, `__OPEN_PATH` bootstrap, claim reply, `onCloseRequested` flow, per-window titles.
+- `view/main.ts` — `openPath` refactor, `__EDYTKA_OPEN_PATH` bootstrap, claim reply, `onCloseRequested` flow, per-window titles.
 - `view/state.ts` (new) — pure decision logic (claim, bootstrap precedence, titles, close branching), unit-tested.
-- `host/capabilities/default.json` — one added permission (`core:window:allow-destroy`).
+- `host/capabilities/default.json` — `core:window:allow-destroy` permission and a `windows` glob covering spawned windows.
 - `.github/workflows/ci.yml` (new) — CI gate: `cargo test`, Vitest, `tsc`, bundle build with an `Info.plist` associations assertion.
 - Dev-only additions: `vitest`, `happy-dom`, `npm test` script. No new runtime dependencies (the dialog plugin used for the Save prompt is already installed).
 - Known gaps (recorded, not built): Cmd+Q quits without prompting (app-quit protection deferred); no stay-alive-after-last-window / dock-reopen behavior; no cap on simultaneous windows.
