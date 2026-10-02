@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/karczews/Edytka/compare/v0.3.1...v0.3.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **ci:** look up release PR via REST API with retries for auto-merge ([e7b5533](https://github.com/karczews/Edytka/commit/e7b553361813b0fe1f444be083a9fc1e7e3115d9))
+
 ## [0.3.1](https://github.com/karczews/Edytka/compare/v0.3.0...v0.3.1) (2026-10-02)
 
 
