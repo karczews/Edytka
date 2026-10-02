@@ -1,20 +1,25 @@
 name: Release
 
 # Conventional commits on main are collected by release-please into a "Release PR"
-# (version bump + changelog). This workflow then waits for CI to pass on that PR,
-# enables auto-merge, and when the PR merges, release-please (running again on the
-# push to main) tags vX.Y.Z and creates the GitHub release; the macOS job then runs
-# in the same workflow and attaches the bundles to it.
+# (version bump + changelog); auto-merge below merges it as soon as the required CI
+# check passes (see the branch-protection note further down). Merging pushes to main,
+# which triggers this workflow again: release-please tags vX.Y.Z and creates the
+# GitHub release, and the macOS job attaches the bundles to it.
 #
-# A PAT must be stored in the RELEASE_PLEASE_TOKEN secret (repo Settings ->
-# Secrets and variables -> Actions). Why: with the default GITHUB_TOKEN the
-# release PR is authored by github-actions[bot], which GitHub treats as an
-# outside collaborator - the PR's CI runs then require manual approval and fail
-# unapproved (a red X on every release PR). A PAT makes the PR author its owner,
-# so CI runs unattended. It also makes the auto-merge below push to main as the
-# owner, and pushes that don't come from GITHUB_TOKEN do trigger this workflow,
-# so the release is tagged right away instead of on the next manual push to main.
-# The PAT needs Contents (write), Pull requests (write) and Workflows (write).
+# Two things outside this file make the flow unattended:
+# 1. The RELEASE_PLEASE_TOKEN secret (Settings -> Secrets and variables ->
+#    Actions) must hold a PAT with Contents (write), Pull requests (write) and
+#    Workflows (write). With the default GITHUB_TOKEN the release PR is authored
+#    by github-actions[bot], which GitHub treats as an outside collaborator: the
+#    PR's CI runs then require manual approval and fail unapproved. A PAT makes
+#    the PR author its owner, so CI runs unattended, and makes the auto-merge
+#    push to main trigger this workflow (GITHUB_TOKEN pushes do not), so the
+#    release is tagged right away.
+# 2. Branch protection on main must require the CI status check (the `test` job
+#    from ci.yml; see Settings -> Branches). Auto-merge only merges after
+#    required checks pass, so this is what makes the release wait for a green
+#    build instead of merging instantly. If CI fails, the PR stays open; fix and
+#    re-run CI, then merge by hand.
 on:
   push:
     branches: [main]
@@ -26,15 +31,14 @@ permissions:
   pull-requests: write
 
 # One release at a time: a newer push waits in the queue instead of racing the
-# run that is already building. The release job also waits for CI on the release
-# PR (~3 minutes warm cache, up to ~15 minutes cold), so a run can take a while.
+# run that is already building.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  # Cheap job (Ubuntu): decides whether a release is due, then shepherds the
-  # release PR - wait for CI to pass on it, then enable auto-merge.
+  # Cheap job (Ubuntu, seconds): decides whether a release is due, then enables
+  # auto-merge on the release PR so GitHub merges it once CI is green.
   release:
     runs-on: ubuntu-latest
     outputs:
@@ -56,8 +60,12 @@ jobs:
             echo "::warning::RELEASE_PLEASE_TOKEN secret is not set. Release PRs will be authored by github-actions[bot], so their CI runs will need manual approval and will fail unapproved. Add a PAT with Contents (write), Pull requests (write) and Workflows (write) scopes."
           fi
 
-      - name: Find the release pull request
-        id: find-pr
+      # Keeps the flow hands-off: the release PR merges itself as soon as the
+      # required `test` check is green. Needs "Allow auto-merge" in Settings ->
+      # General and the branch-protection rule described above. A warning, not
+      # an error, so the PR is still there to merge by hand if a setting or the
+      # token is missing.
+      - name: Enable auto-merge on the release pull request
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
           GH_REPO: ${{ github.repository }}
@@ -79,60 +87,11 @@ jobs:
             echo "No pending release PR found"
             exit 0
           fi
-          echo "number=$pr_number" >> "$GITHUB_OUTPUT"
-
-      # Wait for the PR's own CI before merging, so a release never goes out
-      # unverified. The check-run name is the ci.yml job name (`test`), and the
-      # check-runs endpoint is per-commit, so only runs on the current head are
-      # considered (re-fetched every iteration, in case release-please updates
-      # the PR while we wait).
-      - name: Wait for CI to pass on the release PR
-        id: wait-ci
-        if: steps.find-pr.outputs.number != ''
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
-          GH_REPO: ${{ github.repository }}
-          PR: ${{ steps.find-pr.outputs.number }}
-        run: |
-          deadline=$((SECONDS + 1800))  # 30 minutes, generous for a cold cache
-          while true; do
-            sha=$(gh api "repos/$GH_REPO/pulls/$PR" --jq '.head.sha')
-            result=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
-              --jq '[.[] | select(.name == "test")] | sort_by(.id) | last | .conclusion // ""')
-            echo "CI on ${sha:0:8}: ${result:-in progress} (${SECONDS}s elapsed)"
-            case "$result" in
-              success)
-                echo "outcome=green" >> "$GITHUB_OUTPUT"
-                break ;;
-              failure|cancelled|timed_out|startup_failure)
-                echo "::warning::CI finished as '$result' on release PR #$PR; not enabling auto-merge. Fix and re-run CI, then merge by hand or push to main again."
-                echo "outcome=red" >> "$GITHUB_OUTPUT"
-                exit 0 ;;
-            esac
-            if (( SECONDS >= deadline )); then
-              echo "::warning::timed out waiting for CI on release PR #$PR; not enabling auto-merge. Merge by hand or push to main again."
-              echo "outcome=timeout" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            sleep 20
-          done
-
-      # Keeps the flow hands-off: the release PR merges itself as soon as its CI
-      # is green. Needs "Allow auto-merge" in Settings -> General. A warning, not
-      # an error, so the PR is still there to merge by hand if the setting or
-      # token is missing.
-      - name: Enable auto-merge on the release pull request
-        if: steps.find-pr.outputs.number != '' && steps.wait-ci.outputs.outcome == 'green'
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
-          GH_REPO: ${{ github.repository }}
-          PR: ${{ steps.find-pr.outputs.number }}
-        run: |
-          if ! gh pr merge "$PR" --auto --squash 2>err.txt; then
+          if ! gh pr merge "$pr_number" --auto --squash 2>err.txt; then
             if grep -qi "auto-merge" err.txt; then
-              echo "auto-merge already enabled or unavailable on PR #$PR"
+              echo "auto-merge already enabled or unavailable on PR #$pr_number"
             else
-              echo "::warning::could not enable auto-merge on PR #$PR; merge it by hand to cut the release"
+              echo "::warning::could not enable auto-merge on PR #$pr_number; merge it by hand to cut the release"
               cat err.txt
             fi
           fi
