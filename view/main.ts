@@ -16,6 +16,7 @@ import {
   bootstrapPath,
   closeDecision,
   documentTitle,
+  mapCloseChoice,
   shouldClaim,
 } from "./state";
 
@@ -234,9 +235,7 @@ getCurrentWindow().onCloseRequested(async (event) => {
         kind: "warning",
         buttons: { ...CLOSE_BUTTONS },
       });
-      const choice = result?.toString().toLowerCase();
-      if (choice === "yes" || choice === "no") return choice;
-      return "cancel"; // dialog dismissed
+      return mapCloseChoice(result);
     },
     save: saveFile,
   });

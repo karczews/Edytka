@@ -4,6 +4,7 @@ import {
   bootstrapPath,
   closeDecision,
   documentTitle,
+  mapCloseChoice,
   shouldClaim,
 } from "./state";
 
@@ -66,5 +67,24 @@ describe("CLOSE_BUTTONS", () => {
       no: "Don't Save",
       cancel: "Cancel",
     });
+  });
+});
+
+describe("mapCloseChoice", () => {
+  it("maps the clicked button label to the semantic choice", () => {
+    // The dialog plugin returns the button's label for custom buttons.
+    expect(mapCloseChoice("Save")).toBe("yes");
+    expect(mapCloseChoice("Don't Save")).toBe("no");
+    expect(mapCloseChoice("Cancel")).toBe("cancel");
+    // Case-insensitive, like the platform result casing may vary.
+    expect(mapCloseChoice("save")).toBe("yes");
+    expect(mapCloseChoice("DON'T SAVE")).toBe("no");
+  });
+
+  it("treats dismissal or unknown values as cancel", () => {
+    expect(mapCloseChoice(null)).toBe("cancel");
+    expect(mapCloseChoice(undefined)).toBe("cancel");
+    expect(mapCloseChoice("")).toBe("cancel");
+    expect(mapCloseChoice("Something else")).toBe("cancel");
   });
 });

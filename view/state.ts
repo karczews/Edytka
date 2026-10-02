@@ -46,3 +46,17 @@ export const CLOSE_BUTTONS = {
   no: "Don't Save",
   cancel: "Cancel",
 } as const;
+
+/**
+ * Map a native close-prompt result to the semantic choice. The dialog plugin
+ * returns the clicked button's *label* for custom buttons (not the key), so
+ * the mapping compares against the labels we passed in.
+ */
+export function mapCloseChoice(
+  result: string | null | undefined,
+): "yes" | "no" | "cancel" {
+  const choice = result?.toString().toLowerCase();
+  if (choice === CLOSE_BUTTONS.yes.toLowerCase()) return "yes";
+  if (choice === CLOSE_BUTTONS.no.toLowerCase()) return "no";
+  return "cancel";
+}
